@@ -1,0 +1,654 @@
+---
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template creates the AWS Lambda functions.
+  These APIs will be dynamically invoked by the agents in Amazon Bedrock agents.
+  **WARNING** You will be billed for the AWS resources used if you create a
+  stack from this template.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network
+        Parameters:
+          - SecurityGroupIngressCidrIp
+      - Label:
+          default: General
+        Parameters:
+          - Prefix
+    ParameterLabels:
+      SecurityGroupIngressCidrIp:
+        default: Security group ingress CIDR IP
+
+Parameters:
+  Prefix:
+    Type: String
+    Description: Unique name prefix for resources that are created by the stack.
+    ConstraintDescription: >-
+      must not start with a dash, and must only contain lowercase a-z, digits,
+      and a dash.
+    AllowedPattern: ^[a-z0-9][a-z0-9-]+$
+    MinLength: 1
+    MaxLength: 30
+    Default: aiops
+
+  SecurityGroupIngressCidrIp:
+    Type: String
+    Description: >-
+      IPv4 address in CIDR format for allowed incoming traffic to the EC2 instance. Defaults to allowing all IPs.
+    ConstraintDescription: >-
+      must be in the form x.x.x.x/s, where x is 0-255, and s is 0-32.
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Default: 0.0.0.0/0
+
+Resources:
+
+  # Start: Checks if there are any Amazon CloudWatch alarms in the account related resources
+  CheckCloudWatchAlarmsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: CheckCloudWatchAlarmsFunction
+      Description: This function checks if there are any Amazon CloudWatch alarms in the account
+      Handler: index.lambda_handler
+      Runtime: python3.13
+      Timeout: 29
+      Architectures:
+        - arm64
+      Role: !GetAtt CheckCloudWatchAlarmsFunctionRole.Arn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright 2025 Amazon.com, Inc. or its affiliates . All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import json
+          import boto3
+          import os
+          
+          TOOL_NAME_ALIASES = {
+              "CheckCloudWatchAlarmsFunction": "get_all_alarms",
+              "check_cloudwatch_alarms_function": "get_all_alarms"
+          }
+          
+          def resolve_tool_name(event, context):
+              # MCP format: {"method": "tools/call", "params": {"name": "...", "arguments": {...}}}
+              params = event.get("params")
+              if isinstance(params, dict) and params.get("name"):
+                  return params["name"]          
+              
+              candidates = [
+                  event.get("toolName"),
+                  event.get("tool_name"),
+                  event.get("name"),
+                  event.get("function"),
+                  event.get("functionName")
+              ]
+              
+              tool_use = event.get("toolUse") or event.get("tool_use") or {}
+              if isinstance(tool_use, dict):
+                  candidates.extend([
+                      tool_use.get("name"),
+                      tool_use.get("toolName"),
+                      tool_use.get("tool_name")
+                  ])
+              
+              for candidate in candidates:
+                  if isinstance(candidate, str) and candidate.strip():
+                      return candidate.strip()
+              # 3. Fallback: infer from the Lambda function name itself
+              #    This handles the Strands raw_input=<> bug that sends empty {}
+              function_name = context.function_name  # e.g. "CheckCloudWatchAlarmsFunction"
+              if function_name in TOOL_NAME_ALIASES:
+                  print(f"Empty event received — inferring tool name from function name: {function_name}")
+                  return TOOL_NAME_ALIASES[function_name]    
+                  
+              return None
+          
+          def normalize_tool_name(tool_name):
+              if not isinstance(tool_name, str):
+                  return tool_name
+              normalized = tool_name.strip()
+              return TOOL_NAME_ALIASES.get(normalized, normalized)
+
+          def lambda_handler(event, context):
+              
+              # Log full event for debugging
+              print("Full event received:", json.dumps(event))
+              
+              # Handle if event body is a JSON string
+              if isinstance(event.get("body"), str):
+                  event = json.loads(event["body"])
+              
+              # Resolve tool name from Bedrock/AgentCore payload variants
+              raw_tool_name = resolve_tool_name(event, context)
+              tool_name = raw_tool_name #already resolved via alias in resolve_tool_name
+              
+              # Try common key variants for tool input
+              #tool_input = event.get("toolInput") or event.get("tool_input") or event.get("input") or {}
+              # Replace this line: tool_input = event.get("toolInput") or event.get("tool_input") or event.get("input") or {}
+              # With this:
+              params = event.get("params") or {}
+              tool_input = (
+                  params.get("arguments")         # MCP format
+                  or event.get("toolInput")       # other formats
+                  or event.get("tool_input")
+                  or event.get("input")
+                  or {}
+              )
+
+              if not isinstance(tool_input, dict):
+                  tool_input = {}
+              
+              print(f"Raw tool name: {raw_tool_name}")
+              print(f"Resolved tool name: {tool_name}")
+              print(f"Tool input: {json.dumps(tool_input)}")
+              
+              # Tool: get_all_alarms
+              if tool_name == "get_all_alarms":
+                  cw_client = boto3.client('cloudwatch')
+                  response = cw_client.describe_alarms(
+                      StateValue='ALARM'
+                  )
+                  alarms = []
+                  for alarm in response.get("MetricAlarms", []):
+                      dimensions = alarm.get("Dimensions", [])
+                      instance_id = next(
+                          (d.get("Value") for d in dimensions if d.get("Name") == "InstanceId"),
+                          None
+                      )
+                      alarms.append({
+                          "instanceId": instance_id,
+                          "resourceType": "EC2" if instance_id else "Unknown",
+                          "state": alarm.get("StateReason") or alarm.get("StateValue", "ALARM"),
+                          "alarmName": alarm.get("AlarmName")
+                      })
+                  
+                  message = (
+                      "There are no operational issues in AWS account, all alarms are in OK state"
+                      if len(alarms) == 0
+                      else f"Found {len(alarms)} alarm(s) in ALARM state"
+                  )
+                  tool_result = json.dumps({
+                      "alarms": alarms,
+                      "message": message
+                  })
+              
+              # Tool: sendNotification
+              elif tool_name == "sendNotification":
+                  email_address = tool_input.get("emailaddress")
+                  subject       = tool_input.get("subject")
+                  email_body    = tool_input.get("email_body")
+                  
+                  # Add your actual notification logic here (e.g. SNS, SES)
+                  tool_result = json.dumps({
+                      "message": "Email notification sent successfully"
+                  })
+              
+              # Unknown tool
+              else:
+                  tool_result = json.dumps({
+                      "error": f"Unknown tool requested: {tool_name}"
+                  })
+              
+              return {
+                  "toolResult": tool_result
+              }
+
+
+
+  CheckCloudWatchAlarmsFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeSecurityGroupRules'
+                  - 'cloudwatch:DescribeAlarms'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:RequestedRegion': !Ref 'AWS::Region'
+
+  CheckCloudWatchAlarmsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CheckCloudWatchAlarmsFunction
+      Principal: bedrock.amazonaws.com
+      SourceArn: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*
+  # End: Checks if there are any Amazon CloudWatch alarms in the account related resources
+
+  # Start: Remediate operational issues related to Amazon EC2 instance related resources
+  RemediateEC2OperationalIssueFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: RemediateEC2OperationalIssueFunction
+      Description: This AWS Lambda function remediates operational issues related to Amazon EC2 instance
+      Handler: index.lambda_handler
+      Runtime: python3.13
+      Timeout: 29
+      Architectures:
+        - arm64
+      Role: !GetAtt RemediateEC2OperationalIssueFunctionRole.Arn
+      Code:
+        ZipFile: |
+          # MIT No Attribution
+
+          # Copyright 2025 Amazon.com, Inc. or its affiliates . All Rights Reserved.
+
+          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+          # software and associated documentation files (the "Software"), to deal in the Software
+          # without restriction, including without limitation the rights to use, copy, modify,
+          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+          # permit persons to whom the Software is furnished to do so.
+
+          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+          import boto3
+          import json
+
+          ec2 = boto3.client('ec2')
+
+          # Maps function name -> default tool when toolName is missing
+          FUNCTION_DEFAULT_TOOL = {
+              "RemediateEC2OperationalIssueFunction": "restart_ec2_instance"
+          }
+
+          def resolve_tool_name(event, context):
+              # MCP format: {"method": "tools/call", "params": {"name": "...", "arguments": {...}}}
+              params = event.get("params")
+              if isinstance(params, dict) and params.get("name"):
+                  return params["name"]
+          
+              # Explicit field variants
+              for key in ["toolName", "tool_name", "name", "function", "functionName"]:
+                  if event.get(key):
+                      return event[key]
+          
+              tool_use = event.get("toolUse") or event.get("tool_use") or {}
+              if isinstance(tool_use, dict):
+                  for key in ["name", "toolName", "tool_name"]:
+                      if tool_use.get(key):
+                          return tool_use[key]
+          
+              # Fallback: infer from Lambda function name (handles Strands raw_input=<> bug)
+              fn = context.function_name
+              if fn in FUNCTION_DEFAULT_TOOL:
+                  print(f"No tool name in event — inferring from function name: {fn}")
+                  return FUNCTION_DEFAULT_TOOL[fn]
+          
+              return None
+
+          def resolve_tool_input(event):
+              # MCP format puts arguments under params.arguments
+              params = event.get("params") or {}
+              tool_input = (
+                  params.get("arguments")
+                  or event.get("toolInput")
+                  or event.get("tool_input")
+                  or event.get("input")
+                  or {}
+              )
+              if not isinstance(tool_input, dict):
+                  tool_input = {}
+          
+              # Strands bug: fields sent flat at top level — merge them in
+              # (e.g. {"instanceId": "i-0444..."} with no toolName wrapper)
+              for key in ["instanceId", "instanceARN"]:
+                  if event.get(key) and not tool_input.get(key):
+                      tool_input[key] = event[key]
+          
+              return tool_input
+          
+          def resolve_instance_id(tool_input):
+              instance_id = tool_input.get("instanceId")
+              if instance_id:
+                  return instance_id
+
+              # Backward compatibility: allow instanceARN until callers migrate.
+              instance_arn = tool_input.get("instanceARN")
+              if not instance_arn:
+                  return None
+              if "/" in instance_arn:
+                  return instance_arn.split("/")[-1]
+              return instance_arn
+
+          def lambda_handler(event, context):
+              
+              # Log full event for debugging
+              print("Full event received:", json.dumps(event))
+
+              # Handle if event body is a JSON string
+              if isinstance(event.get("body"), str):
+                  event = json.loads(event["body"])
+              
+              # MCP format fix. 
+              tool_name  = resolve_tool_name(event, context)
+              tool_input = resolve_tool_input(event)
+              
+              print(f"Tool name: {tool_name}")
+              print(f"Tool input: {json.dumps(tool_input)}")
+
+              # Tool: create_snapshot_of_EC2_volume
+              if tool_name == "create_snapshot_of_EC2_volume":
+                  instance_id = resolve_instance_id(tool_input)
+                  if not instance_id:
+                      return {
+                          "toolResult": json.dumps({
+                              "error": "Missing required input: instanceId"
+                          })
+                      }
+                  
+                  # Get the EBS volume ID attached to the EC2 instance
+                  volume_id = ec2.describe_instances(
+                      InstanceIds=[instance_id]
+                  )['Reservations'][0]['Instances'][0]['BlockDeviceMappings'][0]['Ebs']['VolumeId']
+                  
+                  # Create the snapshot
+                  response = ec2.create_snapshot(VolumeId=volume_id)
+                  snapshot_id = response['SnapshotId']
+                  
+                  print(f"Snapshot created: {snapshot_id}")
+                  
+                  return {
+                      "toolResult": json.dumps({
+                          "snapshotId": snapshot_id,
+                          "instanceId": instance_id,
+                          "message": "Snapshot created successfully"
+                      })
+                  }
+
+              # Tool: restart_ec2_instance
+              elif tool_name == "restart_ec2_instance":
+                  instance_id = resolve_instance_id(tool_input)
+                  if not instance_id:
+                      return {
+                          "toolResult": json.dumps({
+                              "error": "Missing required input: instanceId"
+                          })
+                      }
+                  
+                  # Reboot the EC2 instance
+                  ec2.reboot_instances(InstanceIds=[instance_id])
+                  
+                  print(f"Instance restarted: {instance_id}")
+                  
+                  return {
+                      "toolResult": json.dumps({
+                          "instanceId": instance_id,
+                          "message": "Instance restarted successfully"
+                      })
+                  }
+
+              # Unknown tool
+              else:
+                  print(f"Unknown tool requested: {tool_name}")
+                  return {
+                      "toolResult": json.dumps({
+                          "error": f"Unknown tool requested: {tool_name}"
+                      })
+                  }
+
+
+
+  RemediateEC2OperationalIssueFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeSecurityGroupRules'
+                  - 'cloudwatch:DescribeAlarms'
+                  - 'ec2:CreateSnapshot'
+                  - 'ec2:RebootInstances'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'aws:RequestedRegion': !Ref 'AWS::Region'
+
+
+  RemediateEC2OperationalIssuePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RemediateEC2OperationalIssueFunction
+      Principal: bedrock.amazonaws.com
+      SourceArn: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*
+  # End: Remediate operational issues related to Amazon EC2 instance related resources
+
+
+  # Knowledgebase S3 bucket
+  AIOpsKnowledgebaseS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName:
+        Fn::Sub: ${Prefix}-kb-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # AIOps VPC resources
+  AIOpsBedrockVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: AIOpsBedrockVPC
+
+  AIOpsSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      VpcId:
+        Ref: AIOpsBedrockVPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: AIOpsSubnet1
+
+  AIOpsSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.3.0/24
+      VpcId:
+        Ref: AIOpsBedrockVPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: AIOpsSubnet2
+
+  AIOpsInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: AIOpsInternetGateway
+
+  AIOpsBedrockVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: AIOpsInternetGateway
+      VpcId:
+        Ref: AIOpsBedrockVPC
+
+  AIOpsRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: AIOpsBedrockVPC
+      Tags:
+        - Key: Name
+          Value: AIOpsRouteTable
+
+  AIOpsRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AIOpsBedrockVPCGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: AIOpsInternetGateway
+      RouteTableId:
+        Ref: AIOpsRouteTable
+
+  AIOpsSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: AIOpsRouteTable
+      SubnetId:
+        Ref: AIOpsSubnet1
+
+  AIOpsSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: AIOpsRouteTable
+      SubnetId:
+        Ref: AIOpsSubnet2
+
+  AIOpsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: >-
+        Allows incoming traffic on port 5080 and denies all outgoing traffic.
+      SecurityGroupEgress:
+        - Description: Allow all outgoing traffic.
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - Description: Allows incoming TCP traffic on port 5080.
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp:
+            Ref: SecurityGroupIngressCidrIp
+      VpcId:
+        Ref: AIOpsBedrockVPC
+      Tags:
+        - Key: Name
+          Value: AIOpsSecurityGroup
+
+  EC2KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub '\${AWS::StackName}-key'
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref EC2KeyPair      
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AL2023]
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: !Ref AIOpsSubnet1
+          GroupSet: 
+            - !Ref AIOpsSecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: aiops-bedrock-demo
+
+  CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: EC2_Instance_CPU_Utilization
+      AlarmDescription: Alarm when server CPU exceeds 70%
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: 60
+      Statistic: Average
+      Threshold: 70.0
+      ActionsEnabled: false
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref EC2Instance
+      Unit: Percent
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AL2023: ami-085ad6ae776d8f09c
+    us-west-2:
+      AL2023: ami-0005ee01bca55ab66
+
+Outputs:
+
+  CheckCloudWatchAlarmsFunctionArn:
+    Description: "ARN of the FindS3BucketsWithPublicAccess Lambda function"
+    Value: !GetAtt CheckCloudWatchAlarmsFunction.Arn
+
+  RemediateEC2OperationalIssueFunctionArn:
+    Description: "ARN of the RemovePublicAcessFromS3Bucket Lambda function"
+    Value: !GetAtt RemediateEC2OperationalIssueFunction.Arn
+
+  KeyPairName:
+    Description: Name of the created Key Pair
+    Value: !Ref EC2KeyPair

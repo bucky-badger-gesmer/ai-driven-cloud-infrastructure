@@ -1,0 +1,34 @@
+[
+  {
+    "name": "create_snapshot_of_EC2_volume",
+    "description": "API to create snapshot of EBS volume of affected EC2 instance. Use runbook_ec2.docx from Bedrock Knowledge Base to decide when this remediation step is appropriate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "description": "ID of affected EC2 instance (for example, i-0123456789abcdef0)"
+        }
+      },
+      "required": [
+        "instanceId"
+      ]
+    }
+  },
+  {
+    "name": "restart_ec2_instance",
+    "description": "API to restart affected EC2 instance. Use runbook_ec2.docx from Bedrock Knowledge Base to decide when this remediation step is appropriate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "description": "ID of affected EC2 instance (for example, i-0123456789abcdef0)"
+        }
+      },
+      "required": [
+        "instanceId"
+      ]
+    }
+  }
+]

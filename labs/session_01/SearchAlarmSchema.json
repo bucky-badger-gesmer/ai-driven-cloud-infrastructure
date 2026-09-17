@@ -1,0 +1,37 @@
+[
+  {
+    "name": "get_all_alarms",
+    "description": "Get a list of all resources in AWS account in alarm state based on CloudWatch metrics. Use runbook_ec2.docx from Bedrock Knowledge Base to guide remediation decisioning.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "sendNotification",
+    "description": "API to send notification to operations team with issue details and remediation steps taken. Use runbook_ec2.docx from Bedrock Knowledge Base to shape remediation details in the notification.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "email_body": {
+          "type": "string",
+          "description": "body of email notification containing details of issue and all remediation steps taken by agent"
+        },
+        "subject": {
+          "type": "string",
+          "description": "subject of email notification"
+        },
+        "emailaddress": {
+          "type": "string",
+          "description": "email address to send notifications"
+        }
+      },
+      "required": [
+        "emailaddress",
+        "subject",
+        "email_body"
+      ]
+    }
+  }
+]
