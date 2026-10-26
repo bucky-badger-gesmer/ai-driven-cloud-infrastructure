@@ -5,9 +5,10 @@ Course notes and materials for SEIS 616 AI-Driven Cloud Infrastructure at the Un
 ## Repository Structure
 
 ```
-notes/       # Class notes by week/topic
-lectures/    # Lecture slide decks
-labs/        # Lab assignments
+notes/        # Class notes by week/topic
+lectures/     # Lecture slide decks
+labs/         # Lab assignments
+assignments/  # Homework and presentations
 ```
 
 ## Topics
