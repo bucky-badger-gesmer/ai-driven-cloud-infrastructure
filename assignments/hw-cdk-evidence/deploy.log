@@ -1,0 +1,51 @@
+AI agent detected
+
+✨  Synthesis time: 1.42s
+
+WebsiteNetworkStack: start: Building WebsiteNetworkStack/Custom::VpcRestrictDefaultSGCustomResourceProvider Code
+WebsiteNetworkStack: success: Built WebsiteNetworkStack/Custom::VpcRestrictDefaultSGCustomResourceProvider Code
+WebsiteNetworkStack: start: Building WebsiteNetworkStack Template
+WebsiteNetworkStack: success: Built WebsiteNetworkStack Template
+WebsiteServerStack: start: Building WebsiteServerStack Template
+WebsiteServerStack: success: Built WebsiteServerStack Template
+WebsiteNetworkStack: start: Publishing WebsiteNetworkStack Template (762760349846-us-east-1-37d7e7f3)
+WebsiteNetworkStack: start: Publishing WebsiteNetworkStack/Custom::VpcRestrictDefaultSGCustomResourceProvider Code (762760349846-us-east-1-e8e63307)
+WebsiteNetworkStack: success: Published WebsiteNetworkStack Template (762760349846-us-east-1-37d7e7f3)
+WebsiteNetworkStack: success: Published WebsiteNetworkStack/Custom::VpcRestrictDefaultSGCustomResourceProvider Code (762760349846-us-east-1-e8e63307)
+WebsiteNetworkStack
+WebsiteNetworkStack: creating CloudFormation changeset...
+WebsiteNetworkStack: deploying... [1/2]
+
+✅  WebsiteNetworkStack
+
+✨  Deployment time: 58.92s
+
+Outputs:
+WebsiteNetworkStack.PublishOutputRefWebsiteVpc15CDCAEFD0D6E474 = vpc-0099fedebcd260c5a
+WebsiteNetworkStack.PublishOutputRefWebsiteVpcPrivateSubnet1Subnet54EBCE2F640D8EF0 = subnet-0d12dcab62a3be891
+WebsiteNetworkStack.PublishOutputRefWebsiteVpcPrivateSubnet2SubnetBA71D645FDE8A43F = subnet-0967837a04ae7dbad
+WebsiteNetworkStack.PublishOutputRefWebsiteVpcPublicSubnet1SubnetC2E3FF50DDCA7EC6 = subnet-01e23201ecf0747c3
+WebsiteNetworkStack.PublishOutputRefWebsiteVpcPublicSubnet2Subnet03ABF789BBE51B54 = subnet-0b135ed14a5bdf2e1
+Stack ARN:
+arn:aws:cloudformation:us-east-1:762760349846:stack/WebsiteNetworkStack/3d00c6e0-e425-11f1-95f7-0afff41e32e1
+WebsiteServerStack: start: Publishing WebsiteServerStack Template (762760349846-us-east-1-72f9b2a0)
+WebsiteServerStack: success: Published WebsiteServerStack Template (762760349846-us-east-1-72f9b2a0)
+WebsiteServerStack
+WebsiteServerStack: creating CloudFormation changeset...
+WebsiteServerStack: deploying... [2/2]
+
+✅  WebsiteServerStack
+
+✨  Deployment time: 335.92s
+
+Outputs:
+WebsiteServerStack.DbEndpoint = websiteserverstack-databaseb269d8bb-rsxq10ez84e3.c6to8euw2plx.us-east-1.rds.amazonaws.com
+WebsiteServerStack.DbSecretArn = arn:aws:secretsmanager:us-east-1:762760349846:secret:WebsiteServerStackDatabaseS-YSXC89FCpyf2-Cdbgj1
+WebsiteServerStack.Web1InstanceId = i-08b530cf0410b42c9
+WebsiteServerStack.Web2InstanceId = i-0ef795615f6066d60
+WebsiteServerStack.WebUrl = http://Websit-LoadB-IxNhmA8zrvT6-1491491979.us-east-1.elb.amazonaws.com
+Stack ARN:
+arn:aws:cloudformation:us-east-1:762760349846:stack/WebsiteServerStack/64a93650-e425-11f1-999d-0eeba011532f
+
+✨  Total time: 418.36s
+

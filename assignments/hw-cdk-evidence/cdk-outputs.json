@@ -1,0 +1,16 @@
+{
+  "WebsiteNetworkStack": {
+    "PublishOutputRefWebsiteVpcPublicSubnet1SubnetC2E3FF50DDCA7EC6": "subnet-01e23201ecf0747c3",
+    "PublishOutputRefWebsiteVpc15CDCAEFD0D6E474": "vpc-0099fedebcd260c5a",
+    "PublishOutputRefWebsiteVpcPublicSubnet2Subnet03ABF789BBE51B54": "subnet-0b135ed14a5bdf2e1",
+    "PublishOutputRefWebsiteVpcPrivateSubnet2SubnetBA71D645FDE8A43F": "subnet-0967837a04ae7dbad",
+    "PublishOutputRefWebsiteVpcPrivateSubnet1Subnet54EBCE2F640D8EF0": "subnet-0d12dcab62a3be891"
+  },
+  "WebsiteServerStack": {
+    "Web1InstanceId": "i-08b530cf0410b42c9",
+    "DbEndpoint": "websiteserverstack-databaseb269d8bb-rsxq10ez84e3.c6to8euw2plx.us-east-1.rds.amazonaws.com",
+    "DbSecretArn": "arn:aws:secretsmanager:us-east-1:762760349846:secret:WebsiteServerStackDatabaseS-YSXC89FCpyf2-Cdbgj1",
+    "WebUrl": "http://Websit-LoadB-IxNhmA8zrvT6-1491491979.us-east-1.elb.amazonaws.com",
+    "Web2InstanceId": "i-0ef795615f6066d60"
+  }
+}
